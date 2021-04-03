@@ -192,6 +192,22 @@ HRESULT CALLBACK OnD3D9ResetDevice( IDirect3DDevice9* pd3dDevice, const D3DSURFA
 
 void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext )
 {
+    if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0) //왼쪽 화살표키를 눌렀다면
+    {
+        px -= 1;
+    }
+    if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0) //오른쪽 화살표키를 눌렀다면
+    {
+        px += 1;
+    }
+    if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0) //위쪽 화살표키를 눌렀다면
+    {
+        py -= 1;
+    }
+    if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0) //아래쪽 화살표키를 눌렀다면
+    {
+        py += 1;
+    }
 }
 
 
