@@ -64,7 +64,7 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
         int x = 100;
         map[y * 640 + x] = MAP_PROPERTY_EDGE;
     }
-    for (int y = 200; y < 200 + 100; ++y)
+    for (int y = 200; y <= 200 + 100; ++y)
     {
         int x = 200; //그래서 x다름
         map[y * 640 + x] = MAP_PROPERTY_EDGE;
@@ -194,19 +194,39 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
 {
     if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0) //왼쪽 화살표키를 눌렀다면
     {
-        px -= 1;
+        //px -= 1;
+        int mapValue = map[py * 640 + px - 1];
+        if (mapValue == MAP_PROPERTY_EDGE)
+        {
+            px -= 1;
+        }
     }
     if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0) //오른쪽 화살표키를 눌렀다면
     {
-        px += 1;
+        //px += 1;
+        int mapValue = map[py * 640 + px + 1]; //플레이어가 현재있는 맵 위치
+        if (mapValue == MAP_PROPERTY_EDGE) //플레이어 위치가 EDGE라면 움직여라
+        {
+            px += 1;
+        }
     }
     if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0) //위쪽 화살표키를 눌렀다면
     {
-        py -= 1;
+        //py -= 1;
+        int mapValue = map[(py - 1) * 640 + px];
+        if (mapValue == MAP_PROPERTY_EDGE) 
+        {
+            py -= 1;
+        }
     }
     if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0) //아래쪽 화살표키를 눌렀다면
     {
-        py += 1;
+        //py += 1;
+        int mapValue = map[(py + 1) * 640 + px]; 
+        if (mapValue == MAP_PROPERTY_EDGE)
+        {
+            py += 1;
+        }
     }
 }
 
