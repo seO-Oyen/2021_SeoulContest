@@ -41,6 +41,26 @@ bool CALLBACK ModifyDeviceSettings( DXUTDeviceSettings* pDeviceSettings, void* p
     return true;
 }
 
+void UpdateTextureMap() //현재 맵의 정보를 얻어 visit이면 땅을 먹은거 마냥 칠해주기
+{
+    RECT tdr = { 0, 0, 640, 480 };
+    D3DLOCKED_RECT tlr;
+    if (SUCCEEDED((*maskTex)->LockRect(0, &tlr, &tdr, 0)))
+    {
+        //맵의 정보에 따라서 그림을 그린다. 
+        for (int i = 0; i < 640 * 480; ++i)
+        {
+            //map[i] == MAP_PROPERTY_EMPTY //방문 안했을때는 아무것도 안할것이다.
+            if (map[i] == MAP_PROPERTY_VISIT) //방문했을때는 원본그림이 그려졌음 좋겠다.
+            {
+                DWORD* p = (DWORD*)tlr.pBits;
+                p[i] = pixelData[i];
+            }
+        }
+
+        (*maskTex)->UnlockRect(0);
+    }
+}
 
 HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURFACE_DESC* pBackBufferSurfaceDesc,
                                      void* pUserContext )
@@ -162,42 +182,7 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
         (*backgroundTex)->UnlockRect(0);
     }
 
-    // 이미지를 읽은 후에 의도적으로 검정색 박스를 칠해보기.
-    if (SUCCEEDED((*maskTex)->LockRect(0, &tlr, &tdr, 0)))
-    {
-        /*for (int y = 350; y < 350 + 100; ++y)
-        {
-            for (int x = 100; x < 100 + 200; ++x)
-            {
-                DWORD* p = (DWORD*)tlr.pBits;
-                p[y * 640 + x] = pixelData[y * 640 + x]; //내가 먹은 영역만큼 비게
-            }
-        }*/
-
-        //(0, 0, 200, 100) 땅을 먹은것 같은 효과주기
-        /*for (int y = 0; y < 0 + 100; ++y)
-        {
-            for (int x = 0; x < 0 + 200; ++x)
-            {
-                DWORD* p = (DWORD*)tlr.pBits;
-                p[y * 640 + x] = pixelData[y * 640 + x];
-            }
-        }*/
-
-
-        //맵의 정보에 따라서 그림을 그린다. 
-        for (int i = 0; i < 640 * 480; ++i)
-        {
-            //map[i] == MAP_PROPERTY_EMPTY //방문 안했을때는 아무것도 안할것이다.
-            if (map[i] == MAP_PROPERTY_VISIT) //방문했을때는 원본그림이 그려졌음 좋겠다.
-            {
-                DWORD* p = (DWORD*)tlr.pBits;
-                p[i] = pixelData[i];
-            }
-        }
-                
-        (*maskTex)->UnlockRect(0);
-    }
+    UpdateTextureMap();
 
     D3DXCreateSprite(pd3dDevice, &spr);
     return S_OK;
