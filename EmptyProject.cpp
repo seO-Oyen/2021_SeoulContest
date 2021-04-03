@@ -207,8 +207,27 @@ HRESULT CALLBACK OnD3D9ResetDevice( IDirect3DDevice9* pd3dDevice, const D3DSURFA
     return S_OK;
 }
 
+void closePath()
+{
+    playerState = ON_EDGE;
+
+    for (int i = 0; i < trackPlayerPositions.size(); ++i)
+    {
+        int x = trackPlayerPositions[i].x;
+        int y = trackPlayerPositions[i].y;
+
+        map[y * 640 + x] = MAP_PROPERTY_EDGE;
+    }
+    trackPlayerPositions.clear(); //지워줘야한다->안그러면 계속 생감
+}
+
+bool prePressedGenerating = false;
+bool pressedGenerating = false;
+
 void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext )
 {
+    pressedGenerating = GetAsyncKeyState(VK_CONTROL) & 0x8000 != 0; //컨트롤키 누르고 있으면 true
+
     if (playerState == ON_EDGE) //플레이어가 edge일때 실행되는 코드
     {
         int curMapValue = map[py * 640 + px];
@@ -225,7 +244,9 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
             {
                 //맵 생성 시작
-                playerState = GENERATING;
+                if (!prePressedGenerating && pressedGenerating)
+                    playerState = GENERATING;
+                
             }
 
         }
@@ -241,7 +262,8 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
             {
                 //맵 생성 시작
-                playerState = GENERATING;
+                if (!prePressedGenerating && pressedGenerating)
+                    playerState = GENERATING;
             }
         }
         if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0) //위쪽 화살표키를 눌렀다면
@@ -256,7 +278,8 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
             {
                 //맵 생성 시작
-                playerState = GENERATING;
+                if (!prePressedGenerating && pressedGenerating)
+                    playerState = GENERATING;
             }
         }
         if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0) //아래쪽 화살표키를 눌렀다면
@@ -271,7 +294,8 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
             {
                 //맵 생성 시작
-                playerState = GENERATING;
+                if (!prePressedGenerating && pressedGenerating)
+                    playerState = GENERATING;
             }
         }
     }
@@ -287,6 +311,10 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
                 map[py * 640 + px] = MAP_PROPERTY_VISITING;
                 trackPlayerPositions.push_back(D3DXVECTOR2(px, py)); //현재의 위치값을 계속 저장해줌
             }
+            else if (mapValue == MAP_PROPERTY_EDGE) //엣지를 만나게 되었을때->닫혀도 된다
+            {
+                closePath();
+            }
         }
         if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0)
         {
@@ -298,6 +326,10 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
 
                 map[py * 640 + px] = MAP_PROPERTY_VISITING;
                 trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+            }
+            else if (mapValue == MAP_PROPERTY_EDGE)
+            {
+                closePath();
             }
         }
         if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0)
@@ -311,6 +343,10 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
                 map[py * 640 + px] = MAP_PROPERTY_VISITING;
                 trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
             }
+            else if (mapValue == MAP_PROPERTY_EDGE)
+            {
+                closePath();
+            }
         }
         if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0)
         {
@@ -323,8 +359,14 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
                 map[py * 640 + px] = MAP_PROPERTY_VISITING;
                 trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
             }
+            else if (mapValue == MAP_PROPERTY_EDGE)
+            {
+                closePath();
+            }
         }
     }
+
+    prePressedGenerating = pressedGenerating;
 }
 
 
