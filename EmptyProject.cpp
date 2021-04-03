@@ -58,8 +58,18 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
         }*/
     }
 
+    //내부
+    for (int y = 200; y <= 300; ++y)
+    {
+        for (int x = 100; x <= 200; ++x)
+        {
+            map[y * 640 + x] = MAP_PROPERTY_VISIT; //외각선 안쪽 땅들을 전부 visit으로 한다.
+        }
+    }
+
+    //외각선
     //y는 같고 x는 다르다 (세로선)
-    for (int y = 200; y < 200 + 100; ++y) //직선의 값-> 표현을 했지만 보이지는 않는다.
+    /*for (int y = 200; y < 200 + 100; ++y) //직선의 값-> 표현을 했지만 보이지는 않는다.
     {
         int x = 100;
         map[y * 640 + x] = MAP_PROPERTY_EDGE;
@@ -68,10 +78,15 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
     {
         int x = 200; //그래서 x다름
         map[y * 640 + x] = MAP_PROPERTY_EDGE;
+    }*/
+    for (int y = 200; y <= 200 + 100; ++y)
+    {
+        map[y * 640 + 100] = MAP_PROPERTY_EDGE;
+        map[y * 640 + 200] = MAP_PROPERTY_EDGE;
     }
 
     //x는 같고 y는 다르다 (가로선)
-    for (int x = 100; x < 100 + 100; ++x)
+    /*for (int x = 100; x < 100 + 100; ++x)
     {
         int y = 200;
         map[y * 640 + x] = MAP_PROPERTY_EDGE;
@@ -80,6 +95,11 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
     {
         int y = 300;
         map[y * 640 + x] = MAP_PROPERTY_EDGE;
+    }*/
+    for (int x = 100; x <= 200; ++x)
+    {
+        map[200 * 640 + x] = MAP_PROPERTY_EDGE;
+        map[300 * 640 + x] = MAP_PROPERTY_EDGE;
     }
 
 
