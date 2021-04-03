@@ -1,6 +1,11 @@
 #include "DXUT.h"
 #include "resource.h"
 
+#include <vector> //stl vector => 내가 길을 만들어가는 궤적을 저장하기 위해 사용
+
+using namespace std;
+
+vector<D3DXVECTOR2> trackPlayerPositions; //trackPlayerPositions은 실제로 vector2라는 값들을 연속적으로 들고 있을 것이다.
 
 LPDIRECT3DTEXTURE9* backgroundTex = nullptr; //BackgroundTex 원본 이미지를 메모리 형태로 들고만 있다.
 LPDIRECT3DTEXTURE9* maskTex = nullptr;
@@ -19,8 +24,16 @@ int py = 200; //playerY
 #define MAP_PROPERTY_EMPTY 0 //define = 정의
 #define MAP_PROPERTY_VISIT 100
 #define MAP_PROPERTY_EDGE 200
-//#define MAP_PROPERTY_VISITING 300
+#define MAP_PROPERTY_VISITING 300
 //#define MAP_PROPERTY_TEMP 500
+
+enum PlayerState
+{
+    ON_EDGE, //현재 내 캐릭터의 상태가 edge위에 있다.
+    GENERATING, //내가 만들고 있는 중이다.
+};
+
+PlayerState playerState = ON_EDGE; //처음에 플레이어 상태는 무조건 edge위에 있다.
 
 bool CALLBACK IsD3D9DeviceAcceptable( D3DCAPS9* pCaps, D3DFORMAT AdapterFormat, D3DFORMAT BackBufferFormat,
                                       bool bWindowed, void* pUserContext )
@@ -194,43 +207,122 @@ HRESULT CALLBACK OnD3D9ResetDevice( IDirect3DDevice9* pd3dDevice, const D3DSURFA
     return S_OK;
 }
 
-
 void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext )
 {
-    if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0) //왼쪽 화살표키를 눌렀다면
+    if (playerState == ON_EDGE) //플레이어가 edge일때 실행되는 코드
     {
-        //px -= 1;
-        int mapValue = map[py * 640 + px - 1];
-        if (mapValue == MAP_PROPERTY_EDGE)
+        int curMapValue = map[py * 640 + px];
+
+        if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0) //왼쪽 화살표키를 눌렀다면
         {
-            px -= 1;
+            int mapValue = map[py * 640 + px - 1];
+            if (mapValue == MAP_PROPERTY_EDGE)
+            {
+                px -= 1;
+            }
+
+            //현재 있는곳이 edge인데 가려는 곳이 empty이면 맵 생성을 시작 하겠다.
+            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            {
+                //맵 생성 시작
+                playerState = GENERATING;
+            }
+
+        }
+        if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0) //오른쪽 화살표키를 눌렀다면
+        {
+            //px += 1;
+            int mapValue = map[py * 640 + px + 1]; //플레이어가 현재있는 맵 위치
+            if (mapValue == MAP_PROPERTY_EDGE) //플레이어 위치가 EDGE라면 움직여라
+            {
+                px += 1;
+            }
+
+            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            {
+                //맵 생성 시작
+                playerState = GENERATING;
+            }
+        }
+        if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0) //위쪽 화살표키를 눌렀다면
+        {
+            //py -= 1;
+            int mapValue = map[(py - 1) * 640 + px];
+            if (mapValue == MAP_PROPERTY_EDGE)
+            {
+                py -= 1;
+            }
+
+            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            {
+                //맵 생성 시작
+                playerState = GENERATING;
+            }
+        }
+        if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0) //아래쪽 화살표키를 눌렀다면
+        {
+            //py += 1;
+            int mapValue = map[(py + 1) * 640 + px];
+            if (mapValue == MAP_PROPERTY_EDGE)
+            {
+                py += 1;
+            }
+
+            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            {
+                //맵 생성 시작
+                playerState = GENERATING;
+            }
         }
     }
-    if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0) //오른쪽 화살표키를 눌렀다면
+    else if (playerState == GENERATING) //playerState가 GENERATING상태라면 이 코드를 실행
     {
-        //px += 1;
-        int mapValue = map[py * 640 + px + 1]; //플레이어가 현재있는 맵 위치
-        if (mapValue == MAP_PROPERTY_EDGE) //플레이어 위치가 EDGE라면 움직여라
+        if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0)
         {
-            px += 1;
+            int mapValue = map[py * 640 + px - 1];
+            if (mapValue == MAP_PROPERTY_EMPTY) //empty상태에서 움직이는 거니까
+            {
+                px -= 1;
+
+                map[py * 640 + px] = MAP_PROPERTY_VISITING;
+                trackPlayerPositions.push_back(D3DXVECTOR2(px, py)); //현재의 위치값을 계속 저장해줌
+            }
         }
-    }
-    if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0) //위쪽 화살표키를 눌렀다면
-    {
-        //py -= 1;
-        int mapValue = map[(py - 1) * 640 + px];
-        if (mapValue == MAP_PROPERTY_EDGE) 
+        if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0)
         {
-            py -= 1;
+            //px += 1;
+            int mapValue = map[py * 640 + px + 1]; //플레이어가 현재있는 맵 위치
+            if (mapValue == MAP_PROPERTY_EMPTY) //플레이어 위치가 EDGE라면 움직여라
+            {
+                px += 1;
+
+                map[py * 640 + px] = MAP_PROPERTY_VISITING;
+                trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+            }
         }
-    }
-    if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0) //아래쪽 화살표키를 눌렀다면
-    {
-        //py += 1;
-        int mapValue = map[(py + 1) * 640 + px]; 
-        if (mapValue == MAP_PROPERTY_EDGE)
+        if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0)
         {
-            py += 1;
+            //py -= 1;
+            int mapValue = map[(py - 1) * 640 + px];
+            if (mapValue == MAP_PROPERTY_EMPTY)
+            {
+                py -= 1;
+
+                map[py * 640 + px] = MAP_PROPERTY_VISITING;
+                trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+            }
+        }
+        if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0)
+        {
+            //py += 1;
+            int mapValue = map[(py + 1) * 640 + px];
+            if (mapValue == MAP_PROPERTY_EMPTY)
+            {
+                py += 1;
+
+                map[py * 640 + px] = MAP_PROPERTY_VISITING;
+                trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+            }
         }
     }
 }
@@ -261,6 +353,12 @@ void CALLBACK OnD3D9FrameRender( IDirect3DDevice9* pd3dDevice, double fTime, flo
                     spr->Draw(*dotTex, nullptr, nullptr, &edgePos, D3DCOLOR_RGBA(0, 0, 0, 255));
                 }
             }
+        }
+
+        for (int i = 0; i < trackPlayerPositions.size(); ++i)
+        {
+            D3DXVECTOR3 trackPos(trackPlayerPositions[i].x, trackPlayerPositions[i].y, 0);
+            spr->Draw(*dotTex, nullptr, nullptr, &trackPos, D3DCOLOR_RGBA(0, 255, 0, 255));
         }
 
         D3DXVECTOR3 playerPos(px - 3, py - 3, 0); //(100, 200)에 플레이어가 보일것이다.
