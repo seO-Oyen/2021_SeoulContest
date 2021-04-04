@@ -2,6 +2,7 @@
 #include "resource.h"
 
 #include <vector> //stl vector => 내가 길을 만들어가는 궤적을 저장하기 위해 사용
+#include <stack>
 
 using namespace std;
 
@@ -11,21 +12,39 @@ LPDIRECT3DTEXTURE9* backgroundTex = nullptr; //BackgroundTex 원본 이미지를 메모�
 LPDIRECT3DTEXTURE9* maskTex = nullptr;
 LPDIRECT3DTEXTURE9* dotTex = nullptr;
 LPDIRECT3DTEXTURE9* playerTex = nullptr;
+LPDIRECT3DTEXTURE9* alphaTex = nullptr;
 LPD3DXSPRITE spr;
 
 DWORD pixelData[640 * 480]; //얘는 1메가가 넘기 때문에 함수 안이 아닌 바깥에 써준다
 
+DWORD* backgroundTexValues;
+
+int binaryMap[640 * 480];
 int map[640 * 480];
 
-int px = 100; //playerX
-int py = 200; //playerY
+int playerStartX = 300;
+int playerStartY = 300;
+
+int px = playerStartX;
+int py = playerStartY;
+
+float discoveredPixelCount = 0;
+float clearRate = 0;
+
+bool isMoving = false;
+
+int playerDistanceLimit = 5;
+int playerDistance = 0;
+int playerDirectionX;
+int playerDirectionY;
 
 //속성
 #define MAP_PROPERTY_EMPTY 0 //define = 정의
+#define MAP_PROPERTY_RESERVED 50
 #define MAP_PROPERTY_VISIT 100
 #define MAP_PROPERTY_EDGE 200
 #define MAP_PROPERTY_VISITING 300
-//#define MAP_PROPERTY_TEMP 500
+#define MAP_PROPERTY_TEMP 500
 
 enum PlayerState
 {
@@ -33,7 +52,16 @@ enum PlayerState
     GENERATING, //내가 만들고 있는 중이다.
 };
 
+enum PlayerDirection
+{
+    EAST,
+    WEST,
+    SOUTH,
+    NORTH
+};
+
 PlayerState playerState = ON_EDGE; //처음에 플레이어 상태는 무조건 edge위에 있다.
+PlayerDirection playerDirection = EAST;
 
 bool CALLBACK IsD3D9DeviceAcceptable( D3DCAPS9* pCaps, D3DFORMAT AdapterFormat, D3DFORMAT BackBufferFormat,
                                       bool bWindowed, void* pUserContext )
@@ -54,87 +82,49 @@ bool CALLBACK ModifyDeviceSettings( DXUTDeviceSettings* pDeviceSettings, void* p
     return true;
 }
 
-void UpdateTextureMap() //현재 맵의 정보를 얻어 visit이면 땅을 먹은거 마냥 칠해주기
-{
-    RECT tdr = { 0, 0, 640, 480 };
-    D3DLOCKED_RECT tlr;
-    if (SUCCEEDED((*maskTex)->LockRect(0, &tlr, &tdr, 0)))
-    {
-        //맵의 정보에 따라서 그림을 그린다. 
-        for (int i = 0; i < 640 * 480; ++i)
-        {
-            //map[i] == MAP_PROPERTY_EMPTY //방문 안했을때는 아무것도 안할것이다.
-            if (map[i] == MAP_PROPERTY_VISIT) //방문했을때는 원본그림이 그려졌음 좋겠다.
-            {
-                DWORD* p = (DWORD*)tlr.pBits;
-                p[i] = pixelData[i];
-            }
-        }
-
-        (*maskTex)->UnlockRect(0);
-    }
-}
-
 HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURFACE_DESC* pBackBufferSurfaceDesc,
                                      void* pUserContext )
 {
     for (int i = 0; i < 640 * 480; ++i) //이 정보로 그림을 그릴것이다. 
     {
         map[i] = MAP_PROPERTY_EMPTY; //map을 전부다 empty로 초기화 하기
-
-        /*int x = i % 640;
-        int y = i / 640;
-
-        if (x >= 100 && x <= 200) //만약 x의 값이 100이상, 200이하라면 map의 속성을 visit으로 바꾸겠다.
-        {
-            map[i] = MAP_PROPERTY_VISIT;
-        }*/
+        binaryMap[i] = MAP_PROPERTY_EMPTY;
     }
 
-    //내부
-    for (int y = 200; y <= 300; ++y)
+    for (int y = 0; y < 480; ++y)
     {
-        for (int x = 100; x <= 200; ++x)
-        {
-            map[y * 640 + x] = MAP_PROPERTY_VISIT; //외각선 안쪽 땅들을 전부 visit으로 한다.
-        }
+        map[y * 640 + 0] = MAP_PROPERTY_RESERVED;
+        map[y * 640 + 1] = MAP_PROPERTY_EDGE;
+
+        map[y * 640 + 638] = MAP_PROPERTY_EDGE;
+        map[y * 640 + 639] = MAP_PROPERTY_RESERVED;
+
+        binaryMap[y * 640 + 1] = MAP_PROPERTY_VISIT;
+        binaryMap[y * 640 + 638] = MAP_PROPERTY_VISIT;
+        binaryMap[y * 640 + 0] = MAP_PROPERTY_VISIT;
+        binaryMap[y * 640 + 639] = MAP_PROPERTY_VISIT;
+
+        discoveredPixelCount += 2;
     }
 
-    //외각선
-    //y는 같고 x는 다르다 (세로선)
-    /*for (int y = 200; y < 200 + 100; ++y) //직선의 값-> 표현을 했지만 보이지는 않는다.
+    for (int x = 0; x < 640; ++x)
     {
-        int x = 100;
-        map[y * 640 + x] = MAP_PROPERTY_EDGE;
-    }
-    for (int y = 200; y <= 200 + 100; ++y)
-    {
-        int x = 200; //그래서 x다름
-        map[y * 640 + x] = MAP_PROPERTY_EDGE;
-    }*/
-    for (int y = 200; y <= 200 + 100; ++y)
-    {
-        map[y * 640 + 100] = MAP_PROPERTY_EDGE;
-        map[y * 640 + 200] = MAP_PROPERTY_EDGE;
+        map[0 * 640 + x] = MAP_PROPERTY_RESERVED;
+        map[1 * 640 + x] = MAP_PROPERTY_EDGE;
+
+        map[479 * 640 + x] = MAP_PROPERTY_RESERVED;
+        map[478 * 640 + x] = MAP_PROPERTY_EDGE;
+
+        binaryMap[0 * 640 + x] = MAP_PROPERTY_VISIT;
+        binaryMap[479 * 640 + x] = MAP_PROPERTY_VISIT;
+        binaryMap[1 * 640 + x] = MAP_PROPERTY_VISIT;
+        binaryMap[478 * 640 + x] = MAP_PROPERTY_VISIT;
+
+        discoveredPixelCount += 2;
     }
 
-    //x는 같고 y는 다르다 (가로선)
-    /*for (int x = 100; x < 100 + 100; ++x)
-    {
-        int y = 200;
-        map[y * 640 + x] = MAP_PROPERTY_EDGE;
-    }
-    for (int x = 100; x < 100 + 100; ++x)
-    {
-        int y = 300;
-        map[y * 640 + x] = MAP_PROPERTY_EDGE;
-    }*/
-    for (int x = 100; x <= 200; ++x)
-    {
-        map[200 * 640 + x] = MAP_PROPERTY_EDGE;
-        map[300 * 640 + x] = MAP_PROPERTY_EDGE;
-    }
-
+    px = 1;
+    py = 478;
 
     backgroundTex = new LPDIRECT3DTEXTURE9();
     D3DXCreateTextureFromFileExA(pd3dDevice,
@@ -185,17 +175,26 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
         nullptr, 
         nullptr, playerTex);
 
-    RECT tdr = { 0, 0, 640, 480 };
+    alphaTex = new LPDIRECT3DTEXTURE9();
+    D3DXCreateTextureFromFileExA(pd3dDevice,
+        "alpha.png", D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 0,
+        0,
+        D3DFMT_UNKNOWN,
+        D3DPOOL_MANAGED,
+        D3DX_DEFAULT,
+        D3DX_DEFAULT,
+        0,
+        nullptr,
+        nullptr, alphaTex);
+
+    backgroundTexValues = new DWORD[640 * 480];
+    RECT tdr = { 0,0, 640, 480 };
     D3DLOCKED_RECT tlr;
     if (SUCCEEDED((*backgroundTex)->LockRect(0, &tlr, &tdr, 0)))
     {
-        DWORD* p = (DWORD*)tlr.pBits;
-        memcpy(pixelData, p, 640 * 480 * 4);
-
+        memcpy(backgroundTexValues, (DWORD*)tlr.pBits, 640 * 480 * sizeof(DWORD));
         (*backgroundTex)->UnlockRect(0);
     }
-
-    UpdateTextureMap();
 
     D3DXCreateSprite(pd3dDevice, &spr);
     return S_OK;
@@ -207,166 +206,386 @@ HRESULT CALLBACK OnD3D9ResetDevice( IDirect3DDevice9* pd3dDevice, const D3DSURFA
     return S_OK;
 }
 
-void closePath()
+struct Point
 {
-    playerState = ON_EDGE;
+    int x;
+    int y;
+    Point(int _x, int _y)
+        : x(_x), y(_y)
+    {}
+};
 
-    for (int i = 0; i < trackPlayerPositions.size(); ++i)
+void Map_UpdateBorder()
+{
+    for (int y = 1; y < 480 - 1; ++y)
     {
-        int x = trackPlayerPositions[i].x;
-        int y = trackPlayerPositions[i].y;
+        for (int x = 1; x < 640 - 1; ++x)
+        {
+            int binaryValue = binaryMap[y * 640 + x];
+            if (binaryValue != MAP_PROPERTY_VISIT) continue;
 
-        map[y * 640 + x] = MAP_PROPERTY_EDGE;
+            // visit이라면 주위 8개의 픽셀을 얻고 하나라도 visit이 아니라면 edge로 판단한다.
+            int left = binaryMap[y * 640 + (x - 1)];
+            int top = binaryMap[(y - 1) * 640 + x];
+            int right = binaryMap[y * 640 + (x + 1)];
+            int leftTop = binaryMap[(y - 1) * 640 + (x - 1)];
+            int rightTop = binaryMap[(y - 1) * 640 + (x + 1)];
+            int leftBottom = binaryMap[(y + 1) * 640 + (x - 1)];
+            int bottom = binaryMap[(y + 1) * 640 + x];
+            int rightBottom = binaryMap[(y + 1) * 640 + (x + 1)];
+
+            if (y == 0)
+            {
+                top = 0;
+            }
+            if (x == 0)
+            {
+                left = 0;
+            }
+            if (x == 640 - 1)
+            {
+                right = 0;
+            }
+            if (y == 480 - 1)
+            {
+                bottom = 0;
+            }
+
+            if (left != binaryValue ||
+                top != binaryValue ||
+                right != binaryValue ||
+                leftTop != binaryValue ||
+                rightTop != binaryValue ||
+                leftBottom != binaryValue ||
+                bottom != binaryValue ||
+                rightBottom != binaryValue)
+            {
+                map[y * 640 + x] = MAP_PROPERTY_EDGE;
+            }
+        }
     }
-    trackPlayerPositions.clear(); //지워줘야한다->안그러면 계속 생감
 }
 
-bool prePressedGenerating = false;
-bool pressedGenerating = false;
+bool Map_CanVisit(int x, int y)
+{
+    if (x < 0) return false;
+    if (y < 0) return false;
+    if (x >= 640) return false;
+    if (y >= 480) return false;
+
+    return map[y * 640 + x] == MAP_PROPERTY_EMPTY ||
+        map[y * 640 + x] == MAP_PROPERTY_VISIT ||
+        map[y * 640 + x] == MAP_PROPERTY_EDGE;
+}
+
+bool Map_IsEmpty(int x, int y)
+{
+    return map[y * 640 + x] == MAP_PROPERTY_EMPTY;
+}
+
+bool Map_IsEdge(int x, int y)
+{
+    return map[y * 640 + x] == MAP_PROPERTY_EDGE;
+}
+
+void floodFill(int x, int y, int s, int n)
+{
+    stack<int> floodStack;
+    floodStack.push(y * 640 + x);
+
+    while (!floodStack.empty())
+    {
+        int index = floodStack.top();
+        floodStack.pop();
+
+        int xIndex = index % 640;
+        int yIndex = index / 640;
+
+        if (xIndex < 0) continue;
+        if (yIndex < 0) continue;
+        if (xIndex >= 640) continue;
+        if (yIndex >= 480) continue;
+        if (map[index] != s) continue;
+
+        map[index] = n;
+
+        floodStack.push(yIndex * 640 + (xIndex - 1));
+        floodStack.push(yIndex * 640 + (xIndex + 1));
+        floodStack.push((yIndex - 1) * 640 + xIndex);
+        floodStack.push((yIndex + 1) * 640 + xIndex);
+    }
+}
+
+bool Map_SetProperty(int x, int y, int flag)
+{
+    if (map[y * 640 + x] == MAP_PROPERTY_VISIT || map[y * 640 + x] == MAP_PROPERTY_EDGE)
+    {
+        isMoving = false;
+        playerState = ON_EDGE;
+
+        floodFill(640 / 2, 480 / 2, MAP_PROPERTY_EMPTY, MAP_PROPERTY_TEMP);
+
+        discoveredPixelCount = 0;
+
+        for (int i = 0; i < 640 * 480; ++i)
+        {
+            if (map[i] != MAP_PROPERTY_TEMP)
+            {
+                discoveredPixelCount++;
+                binaryMap[i] = MAP_PROPERTY_VISIT;
+            }
+            else
+            {
+                binaryMap[i] = MAP_PROPERTY_EMPTY;
+            }
+        }
+
+        memcpy(map, binaryMap, 640 * 480 * sizeof(int));
+
+        RECT tdr = { 0,0, 640, 480 };
+        D3DLOCKED_RECT tlr;
+        if (SUCCEEDED((*alphaTex)->LockRect(0, &tlr, &tdr, 0)))
+        {
+            for (int i = 0; i < 640 * 480; ++i)
+            {
+                if (map[i] == MAP_PROPERTY_VISIT)
+                {
+                    DWORD* p = (DWORD*)tlr.pBits;
+                    p[i] = backgroundTexValues[i];
+                }
+            }
+
+            (*alphaTex)->UnlockRect(0);
+        }
+
+        Map_UpdateBorder();
+
+        return false;
+    }
+    else
+        map[y * 640 + x] = flag;
+
+    return true;
+}
+
+void player_StartGenerate(PlayerDirection dir)
+{
+    // 방향 전환은 최소한 3픽셀 이후에 가능(영역을 만들기 위해서)
+    playerDirection = dir;
+    playerDistance = 0;
+
+    isMoving = true;
+    playerState = GENERATING;
+    trackPlayerPositions.clear();
+
+    playerStartX = px;
+    playerStartY = py;
+}
 
 void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext )
 {
-    pressedGenerating = GetAsyncKeyState(VK_CONTROL) & 0x8000 != 0; //컨트롤키 누르고 있으면 true
-
-    if (playerState == ON_EDGE) //플레이어가 edge일때 실행되는 코드
+    if (playerState == ON_EDGE)
     {
-        int curMapValue = map[py * 640 + px];
-
-        if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0) //왼쪽 화살표키를 눌렀다면
+        bool wantToGenerate = false;
+        if ((GetAsyncKeyState(VK_CONTROL) & 0X8000) != 0)
         {
-            int mapValue = map[py * 640 + px - 1];
-            if (mapValue == MAP_PROPERTY_EDGE)
+            wantToGenerate = true;
+        }
+
+        if ((GetAsyncKeyState(VK_LEFT) & 0X8000) != 0)
+        {
+            if (Map_IsEdge(px - 1, py))
             {
                 px -= 1;
+                isMoving = false;
+                playerState = ON_EDGE;
             }
-
-            //현재 있는곳이 edge인데 가려는 곳이 empty이면 맵 생성을 시작 하겠다.
-            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            else
             {
-                //맵 생성 시작
-                if (!prePressedGenerating && pressedGenerating)
-                    playerState = GENERATING;
-                
+                if (Map_IsEmpty(px - 1, py) && wantToGenerate)
+                {
+                    player_StartGenerate(WEST);
+                }
             }
-
         }
-        if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0) //오른쪽 화살표키를 눌렀다면
+        if ((GetAsyncKeyState(VK_RIGHT) & 0X8000) != 0)
         {
-            //px += 1;
-            int mapValue = map[py * 640 + px + 1]; //플레이어가 현재있는 맵 위치
-            if (mapValue == MAP_PROPERTY_EDGE) //플레이어 위치가 EDGE라면 움직여라
+            if (Map_IsEdge(px + 1, py))
             {
                 px += 1;
+                isMoving = false;
+                playerState = ON_EDGE;
             }
-
-            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            else
             {
-                //맵 생성 시작
-                if (!prePressedGenerating && pressedGenerating)
-                    playerState = GENERATING;
+                if (Map_IsEmpty(px + 1, py) && wantToGenerate)
+                {
+                    player_StartGenerate(EAST);
+                }
             }
         }
-        if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0) //위쪽 화살표키를 눌렀다면
+        if ((GetAsyncKeyState(VK_UP) & 0X8000) != 0)
         {
-            //py -= 1;
-            int mapValue = map[(py - 1) * 640 + px];
-            if (mapValue == MAP_PROPERTY_EDGE)
+            if (Map_IsEdge(px, py - 1))
             {
                 py -= 1;
+                isMoving = false;
+                playerState = ON_EDGE;
             }
-
-            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            else
             {
-                //맵 생성 시작
-                if (!prePressedGenerating && pressedGenerating)
-                    playerState = GENERATING;
+                if (Map_IsEmpty(px, py - 1) && wantToGenerate)
+                {
+                    player_StartGenerate(NORTH);
+                }
             }
         }
-        if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0) //아래쪽 화살표키를 눌렀다면
+        if ((GetAsyncKeyState(VK_DOWN) & 0X8000) != 0)
         {
-            //py += 1;
-            int mapValue = map[(py + 1) * 640 + px];
-            if (mapValue == MAP_PROPERTY_EDGE)
+            if (Map_IsEdge(px, py + 1))
             {
                 py += 1;
+                isMoving = false;
+                playerState = ON_EDGE;
             }
-
-            if (mapValue == MAP_PROPERTY_EMPTY && curMapValue == MAP_PROPERTY_EDGE)
+            else
             {
-                //맵 생성 시작
-                if (!prePressedGenerating && pressedGenerating)
-                    playerState = GENERATING;
+                if (Map_IsEmpty(px, py + 1) && wantToGenerate)
+                {
+                    player_StartGenerate(SOUTH);
+                }
             }
         }
     }
-    else if (playerState == GENERATING) //playerState가 GENERATING상태라면 이 코드를 실행
+    else if (playerState == GENERATING)
     {
-        if ((GetAsyncKeyState(VK_LEFT) & 0x8000) != 0)
+        if ((GetAsyncKeyState(VK_CONTROL) & 0X8000) == 0)
         {
-            int mapValue = map[py * 640 + px - 1];
-            if (mapValue == MAP_PROPERTY_EMPTY) //empty상태에서 움직이는 거니까
-            {
-                px -= 1;
+            isMoving = false;
+            playerState = ON_EDGE;
 
-                map[py * 640 + px] = MAP_PROPERTY_VISITING;
-                trackPlayerPositions.push_back(D3DXVECTOR2(px, py)); //현재의 위치값을 계속 저장해줌
-            }
-            else if (mapValue == MAP_PROPERTY_EDGE) //엣지를 만나게 되었을때->닫혀도 된다
+            // trackPlayerPositions에 있는 경로들은 다시 Empty로 복구 시킨다.
+            for (int i = 0; i < trackPlayerPositions.size(); ++i)
             {
-                closePath();
+                const int index = trackPlayerPositions[i].y * 640 + trackPlayerPositions[i].x;
+                map[index] = MAP_PROPERTY_EMPTY;
             }
+            trackPlayerPositions.clear();
+
+            px = playerStartX;
+            py = playerStartY;
         }
-        if ((GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0)
-        {
-            //px += 1;
-            int mapValue = map[py * 640 + px + 1]; //플레이어가 현재있는 맵 위치
-            if (mapValue == MAP_PROPERTY_EMPTY) //플레이어 위치가 EDGE라면 움직여라
-            {
-                px += 1;
 
-                map[py * 640 + px] = MAP_PROPERTY_VISITING;
-                trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
-            }
-            else if (mapValue == MAP_PROPERTY_EDGE)
-            {
-                closePath();
-            }
-        }
-        if ((GetAsyncKeyState(VK_UP) & 0x8000) != 0)
+        if (isMoving)
         {
-            //py -= 1;
-            int mapValue = map[(py - 1) * 640 + px];
-            if (mapValue == MAP_PROPERTY_EMPTY)
+            if ((GetAsyncKeyState(VK_LEFT) & 0X8000) != 0)
             {
-                py -= 1;
+                if (Map_CanVisit(px - 1, py))
+                {
+                    if (playerDirection != WEST && playerDistance >= playerDistanceLimit)
+                    {
+                        playerDistance = 0;
+                        playerDirection = WEST;
+                    }
 
-                map[py * 640 + px] = MAP_PROPERTY_VISITING;
-                trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
-            }
-            else if (mapValue == MAP_PROPERTY_EDGE)
-            {
-                closePath();
-            }
-        }
-        if ((GetAsyncKeyState(VK_DOWN) & 0x8000) != 0)
-        {
-            //py += 1;
-            int mapValue = map[(py + 1) * 640 + px];
-            if (mapValue == MAP_PROPERTY_EMPTY)
-            {
-                py += 1;
+                    if (playerDirection == WEST)
+                    {
+                        playerDistance++;
 
-                map[py * 640 + px] = MAP_PROPERTY_VISITING;
-                trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+                        px -= 1;
+
+                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        {
+                            px += 1;
+                        }
+                        else
+                        {
+                            trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+                        }
+                    }
+                }
             }
-            else if (mapValue == MAP_PROPERTY_EDGE)
+            else if ((GetAsyncKeyState(VK_RIGHT) & 0X8000) != 0)
             {
-                closePath();
+                if (Map_CanVisit(px + 1, py))
+                {
+                    if (playerDirection != EAST && playerDistance >= playerDistanceLimit)
+                    {
+                        playerDistance = 0;
+                        playerDirection = EAST;
+                    }
+
+                    if (playerDirection == EAST)
+                    {
+                        playerDistance++;
+
+                        px += 1;
+                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        {
+                            px -= 1;
+                        }
+                        else
+                        {
+                            trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+                        }
+                    }
+                }
+            }
+            else if ((GetAsyncKeyState(VK_UP) & 0X8000) != 0)
+            {
+                if (Map_CanVisit(px, py - 1))
+                {
+                    if (playerDirection != NORTH && playerDistance >= playerDistanceLimit)
+                    {
+                        playerDistance = 0;
+                        playerDirection = NORTH;
+                    }
+
+                    if (playerDirection == NORTH)
+                    {
+                        playerDistance++;
+
+                        py -= 1;
+                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        {
+                            py += 1;
+                        }
+                        else
+                        {
+                            trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+                        }
+                    }
+                }
+            }
+            else if ((GetAsyncKeyState(VK_DOWN) & 0X8000) != 0)
+            {
+                if (Map_CanVisit(px, py + 1))
+                {
+                    if (playerDirection != SOUTH && playerDistance >= playerDistanceLimit)
+                    {
+                        playerDistance = 0;
+                        playerDirection = SOUTH;
+                    }
+
+                    if (playerDirection == SOUTH)
+                    {
+                        playerDistance++;
+
+                        py += 1;
+                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        {
+                            py -= 1;
+                        }
+                        else
+                        {
+                            trackPlayerPositions.push_back(D3DXVECTOR2(px, py));
+                        }
+                    }
+                }
             }
         }
     }
-
-    prePressedGenerating = pressedGenerating;
+    clearRate = discoveredPixelCount / (640 * 480);
 }
 
 
@@ -381,9 +600,11 @@ void CALLBACK OnD3D9FrameRender( IDirect3DDevice9* pd3dDevice, double fTime, flo
     if( SUCCEEDED( pd3dDevice->BeginScene() ) )
     {
         spr->Begin(D3DXSPRITE_ALPHABLEND);
-
-        spr->Draw(*backgroundTex, nullptr, nullptr, nullptr, D3DCOLOR_RGBA(255, 255, 255, 255));
         spr->Draw(*maskTex, nullptr, nullptr, nullptr, D3DCOLOR_RGBA(255, 255, 255, 255));
+        spr->End();
+
+        spr->Begin(D3DXSPRITE_ALPHABLEND);
+        spr->Draw(*alphaTex, nullptr, nullptr, nullptr, D3DCOLOR_RGBA(255, 255, 255, 255));        
 
         for (int y = 0; y < 480; ++y)
         {
@@ -393,6 +614,12 @@ void CALLBACK OnD3D9FrameRender( IDirect3DDevice9* pd3dDevice, double fTime, flo
                 {
                     D3DXVECTOR3 edgePos(x, y, 0);
                     spr->Draw(*dotTex, nullptr, nullptr, &edgePos, D3DCOLOR_RGBA(0, 0, 0, 255));
+                }
+
+                if (map[y * 640 + x] == MAP_PROPERTY_TEMP)
+                {
+                    D3DXVECTOR3 edgePos(x, y, 0);
+                    spr->Draw(*dotTex, nullptr, nullptr, &edgePos, D3DCOLOR_RGBA(0, 0, 128, 255));
                 }
             }
         }
@@ -430,6 +657,7 @@ void CALLBACK OnD3D9DestroyDevice( void* pUserContext )
     (*backgroundTex)->Release();
     (*dotTex)->Release();
     (*playerTex)->Release();
+    (*alphaTex)->Release();
 
     spr->Release();
 }
