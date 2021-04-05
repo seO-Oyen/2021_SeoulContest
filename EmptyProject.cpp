@@ -17,7 +17,7 @@ LPD3DXSPRITE spr;
 
 DWORD pixelData[640 * 480]; //얘는 1메가가 넘기 때문에 함수 안이 아닌 바깥에 써준다
 
-DWORD* backgroundTexValues;
+DWORD* backTexValues;
 
 int binaryMap[640 * 480];
 int map[640 * 480];
@@ -28,28 +28,22 @@ int playerStartY = 300;
 int px = playerStartX;
 int py = playerStartY;
 
-float discoveredPixelCount = 0;
-float clearRate = 0;
-
 bool isMoving = false;
 
-int playerDistanceLimit = 5;
+int playerLimit = 5;
 int playerDistance = 0;
-int playerDirectionX;
-int playerDirectionY;
 
 //속성
-#define MAP_PROPERTY_EMPTY 0 //define = 정의
-#define MAP_PROPERTY_RESERVED 50
-#define MAP_PROPERTY_VISIT 100
-#define MAP_PROPERTY_EDGE 200
-#define MAP_PROPERTY_VISITING 300
-#define MAP_PROPERTY_TEMP 500
+#define EMPTY 0 //define = 정의
+#define VISIT 100
+#define EDGE 200
+#define VISITING 300
+#define TEMP 500
 
 enum PlayerState
 {
     ON_EDGE, //현재 내 캐릭터의 상태가 edge위에 있다.
-    GENERATING, //내가 만들고 있는 중이다.
+    GENERATING //내가 만들고 있는 중이다.
 };
 
 enum PlayerDirection
@@ -57,7 +51,7 @@ enum PlayerDirection
     EAST,
     WEST,
     SOUTH,
-    NORTH
+    NORTH,
 };
 
 PlayerState playerState = ON_EDGE; //처음에 플레이어 상태는 무조건 edge위에 있다.
@@ -87,40 +81,19 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
 {
     for (int i = 0; i < 640 * 480; ++i) //이 정보로 그림을 그릴것이다. 
     {
-        map[i] = MAP_PROPERTY_EMPTY; //map을 전부다 empty로 초기화 하기
-        binaryMap[i] = MAP_PROPERTY_EMPTY;
+        map[i] = EMPTY; //map을 전부다 empty로 초기화 하기
     }
 
     for (int y = 0; y < 480; ++y)
     {
-        map[y * 640 + 0] = MAP_PROPERTY_RESERVED;
-        map[y * 640 + 1] = MAP_PROPERTY_EDGE;
-
-        map[y * 640 + 638] = MAP_PROPERTY_EDGE;
-        map[y * 640 + 639] = MAP_PROPERTY_RESERVED;
-
-        binaryMap[y * 640 + 1] = MAP_PROPERTY_VISIT;
-        binaryMap[y * 640 + 638] = MAP_PROPERTY_VISIT;
-        binaryMap[y * 640 + 0] = MAP_PROPERTY_VISIT;
-        binaryMap[y * 640 + 639] = MAP_PROPERTY_VISIT;
-
-        discoveredPixelCount += 2;
+        map[y * 640 + 1] = EDGE;
+        map[y * 640 + 638] = EDGE;
     }
 
     for (int x = 0; x < 640; ++x)
     {
-        map[0 * 640 + x] = MAP_PROPERTY_RESERVED;
-        map[1 * 640 + x] = MAP_PROPERTY_EDGE;
-
-        map[479 * 640 + x] = MAP_PROPERTY_RESERVED;
-        map[478 * 640 + x] = MAP_PROPERTY_EDGE;
-
-        binaryMap[0 * 640 + x] = MAP_PROPERTY_VISIT;
-        binaryMap[479 * 640 + x] = MAP_PROPERTY_VISIT;
-        binaryMap[1 * 640 + x] = MAP_PROPERTY_VISIT;
-        binaryMap[478 * 640 + x] = MAP_PROPERTY_VISIT;
-
-        discoveredPixelCount += 2;
+        map[1 * 640 + x] = EDGE;
+        map[478 * 640 + x] = EDGE;
     }
 
     px = 1;
@@ -187,12 +160,12 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
         nullptr,
         nullptr, alphaTex);
 
-    backgroundTexValues = new DWORD[640 * 480];
+    backTexValues = new DWORD[640 * 480];
     RECT tdr = { 0,0, 640, 480 };
     D3DLOCKED_RECT tlr;
     if (SUCCEEDED((*backgroundTex)->LockRect(0, &tlr, &tdr, 0)))
     {
-        memcpy(backgroundTexValues, (DWORD*)tlr.pBits, 640 * 480 * sizeof(DWORD));
+        memcpy(backTexValues, (DWORD*)tlr.pBits, 640 * 480 * sizeof(DWORD));
         (*backgroundTex)->UnlockRect(0);
     }
 
@@ -222,7 +195,7 @@ void Map_UpdateBorder()
         for (int x = 1; x < 640 - 1; ++x)
         {
             int binaryValue = binaryMap[y * 640 + x];
-            if (binaryValue != MAP_PROPERTY_VISIT) continue;
+            if (binaryValue != VISIT) continue;
 
             // visit이라면 주위 8개의 픽셀을 얻고 하나라도 visit이 아니라면 edge로 판단한다.
             int left = binaryMap[y * 640 + (x - 1)];
@@ -260,7 +233,7 @@ void Map_UpdateBorder()
                 bottom != binaryValue ||
                 rightBottom != binaryValue)
             {
-                map[y * 640 + x] = MAP_PROPERTY_EDGE;
+                map[y * 640 + x] = EDGE;
             }
         }
     }
@@ -273,19 +246,19 @@ bool Map_CanVisit(int x, int y)
     if (x >= 640) return false;
     if (y >= 480) return false;
 
-    return map[y * 640 + x] == MAP_PROPERTY_EMPTY ||
-        map[y * 640 + x] == MAP_PROPERTY_VISIT ||
-        map[y * 640 + x] == MAP_PROPERTY_EDGE;
+    return map[y * 640 + x] == EMPTY ||
+        map[y * 640 + x] == VISIT ||
+        map[y * 640 + x] == EDGE;
 }
 
 bool Map_IsEmpty(int x, int y)
 {
-    return map[y * 640 + x] == MAP_PROPERTY_EMPTY;
+    return map[y * 640 + x] == EMPTY;
 }
 
 bool Map_IsEdge(int x, int y)
 {
-    return map[y * 640 + x] == MAP_PROPERTY_EDGE;
+    return map[y * 640 + x] == EDGE;
 }
 
 void floodFill(int x, int y, int s, int n)
@@ -318,25 +291,22 @@ void floodFill(int x, int y, int s, int n)
 
 bool Map_SetProperty(int x, int y, int flag)
 {
-    if (map[y * 640 + x] == MAP_PROPERTY_VISIT || map[y * 640 + x] == MAP_PROPERTY_EDGE)
+    if (map[y * 640 + x] == VISIT || map[y * 640 + x] == EDGE)
     {
         isMoving = false;
         playerState = ON_EDGE;
 
-        floodFill(640 / 2, 480 / 2, MAP_PROPERTY_EMPTY, MAP_PROPERTY_TEMP);
-
-        discoveredPixelCount = 0;
+        floodFill(640 / 2, 480 / 2, EMPTY, TEMP);
 
         for (int i = 0; i < 640 * 480; ++i)
         {
-            if (map[i] != MAP_PROPERTY_TEMP)
+            if (map[i] != TEMP)
             {
-                discoveredPixelCount++;
-                binaryMap[i] = MAP_PROPERTY_VISIT;
+                binaryMap[i] = VISIT;
             }
             else
             {
-                binaryMap[i] = MAP_PROPERTY_EMPTY;
+                binaryMap[i] = EMPTY;
             }
         }
 
@@ -348,10 +318,10 @@ bool Map_SetProperty(int x, int y, int flag)
         {
             for (int i = 0; i < 640 * 480; ++i)
             {
-                if (map[i] == MAP_PROPERTY_VISIT)
+                if (map[i] == VISIT)
                 {
                     DWORD* p = (DWORD*)tlr.pBits;
-                    p[i] = backgroundTexValues[i];
+                    p[i] = backTexValues[i];
                 }
             }
 
@@ -468,7 +438,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             for (int i = 0; i < trackPlayerPositions.size(); ++i)
             {
                 const int index = trackPlayerPositions[i].y * 640 + trackPlayerPositions[i].x;
-                map[index] = MAP_PROPERTY_EMPTY;
+                map[index] = EMPTY;
             }
             trackPlayerPositions.clear();
 
@@ -482,7 +452,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             {
                 if (Map_CanVisit(px - 1, py))
                 {
-                    if (playerDirection != WEST && playerDistance >= playerDistanceLimit)
+                    if (playerDirection != WEST && playerDistance >= playerLimit)
                     {
                         playerDistance = 0;
                         playerDirection = WEST;
@@ -494,7 +464,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
 
                         px -= 1;
 
-                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        if (!Map_SetProperty(px, py, VISITING))
                         {
                             px += 1;
                         }
@@ -509,7 +479,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             {
                 if (Map_CanVisit(px + 1, py))
                 {
-                    if (playerDirection != EAST && playerDistance >= playerDistanceLimit)
+                    if (playerDirection != EAST && playerDistance >= playerLimit)
                     {
                         playerDistance = 0;
                         playerDirection = EAST;
@@ -520,7 +490,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
                         playerDistance++;
 
                         px += 1;
-                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        if (!Map_SetProperty(px, py, VISITING))
                         {
                             px -= 1;
                         }
@@ -535,7 +505,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             {
                 if (Map_CanVisit(px, py - 1))
                 {
-                    if (playerDirection != NORTH && playerDistance >= playerDistanceLimit)
+                    if (playerDirection != NORTH && playerDistance >= playerLimit)
                     {
                         playerDistance = 0;
                         playerDirection = NORTH;
@@ -546,7 +516,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
                         playerDistance++;
 
                         py -= 1;
-                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        if (!Map_SetProperty(px, py, VISITING))
                         {
                             py += 1;
                         }
@@ -561,7 +531,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             {
                 if (Map_CanVisit(px, py + 1))
                 {
-                    if (playerDirection != SOUTH && playerDistance >= playerDistanceLimit)
+                    if (playerDirection != SOUTH && playerDistance >= playerLimit)
                     {
                         playerDistance = 0;
                         playerDirection = SOUTH;
@@ -572,7 +542,7 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
                         playerDistance++;
 
                         py += 1;
-                        if (!Map_SetProperty(px, py, MAP_PROPERTY_VISITING))
+                        if (!Map_SetProperty(px, py, VISITING))
                         {
                             py -= 1;
                         }
@@ -585,7 +555,6 @@ void CALLBACK OnFrameMove( double fTime, float fElapsedTime, void* pUserContext 
             }
         }
     }
-    clearRate = discoveredPixelCount / (640 * 480);
 }
 
 
@@ -610,13 +579,13 @@ void CALLBACK OnD3D9FrameRender( IDirect3DDevice9* pd3dDevice, double fTime, flo
         {
             for (int x = 0; x < 640; ++x)
             {
-                if (map[y * 640 + x] == MAP_PROPERTY_EDGE) //만약 맵의 속성이 EDGE라면 dot을 그려라
+                if (map[y * 640 + x] == EDGE) //만약 맵의 속성이 EDGE라면 dot을 그려라
                 {
                     D3DXVECTOR3 edgePos(x, y, 0);
                     spr->Draw(*dotTex, nullptr, nullptr, &edgePos, D3DCOLOR_RGBA(0, 0, 0, 255));
                 }
 
-                if (map[y * 640 + x] == MAP_PROPERTY_TEMP)
+                if (map[y * 640 + x] == TEMP)
                 {
                     D3DXVECTOR3 edgePos(x, y, 0);
                     spr->Draw(*dotTex, nullptr, nullptr, &edgePos, D3DCOLOR_RGBA(0, 0, 128, 255));
