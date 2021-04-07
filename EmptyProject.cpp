@@ -168,7 +168,7 @@ HRESULT CALLBACK OnD3D9CreateDevice( IDirect3DDevice9* pd3dDevice, const D3DSURF
         memcpy(backTexValues, (DWORD*)tlr.pBits, 640 * 480 * sizeof(DWORD));
         (*backgroundTex)->UnlockRect(0);
     }
-
+    
     D3DXCreateSprite(pd3dDevice, &spr);
     return S_OK;
 }
@@ -329,6 +329,8 @@ bool Map_SetProperty(int x, int y, int flag)
         }
 
         Map_UpdateBorder();
+
+        trackPlayerPositions.clear();
 
         return false;
     }
